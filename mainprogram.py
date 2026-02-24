@@ -4,7 +4,6 @@ from tkinter import ttk
 from tkinter import messagebox
 
 
-
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -42,11 +41,13 @@ class App(tk.Tk):
         if hasattr(frame, "refresh"):
             frame.refresh()
 
-    def add_inventory_item(self, item_name, qty, location, last_bought):
+    def add_inventory_item(self, item_name, qty, units, location, last_bought, category=None):
         self.inventory[item_name] = {
             "Quantity": qty,
+            "Unit": units,
             "Location": location,
-            "Last Bought": last_bought
+            "Last Bought": last_bought,
+            "Category": category
         }
 
         if location not in self.kitchen:
@@ -86,7 +87,7 @@ class App(tk.Tk):
         return
     
     def get_recipe(self, recipe_name):
-        return
+        return recipe_name
     
     def remove_inventory_item(self, item_name):
         item_name = item_name.strip()
@@ -186,6 +187,9 @@ class Inventory(tk.Frame):
         b5 = tk.Button(button_frame, text="Search", command=lambda: controller.show_frame(SearchInventory))
         b5.pack(side=tk.LEFT, padx=5, pady=5)
 
+        b6 = tk.Button(button_frame, text="Categorize Current Inventory", command=self.refresh_category)
+        b6.pack(side=tk.LEFT, padx=5, pady=5)
+
     def refresh(self):
         for i in self.list_frame.winfo_children():
             i.destroy()
@@ -201,8 +205,10 @@ class Inventory(tk.Frame):
 
         tk.Label(header, text="Item", width=20, anchor="w", font=("Arial", 12, "bold")).grid(row=0, column=0, sticky="w")
         tk.Label(header, text="Qty", width=10, anchor="w", font=("Arial", 12, "bold")).grid(row=0, column=1, sticky="w")
-        tk.Label(header, text="Location", width=20, anchor="w", font=("Arial", 12, "bold")).grid(row=0, column=2, sticky="w")
-        tk.Label(header, text="Last Bought", width=15, anchor="w", font=("Arial", 12, "bold")).grid(row=0, column=3, sticky="w")
+        tk.Label(header, text="Units", width=10, anchor="w", font=("Arial", 12, "bold")).grid(row=0, column=2, sticky="w")
+        tk.Label(header, text="Location", width=20, anchor="w", font=("Arial", 12, "bold")).grid(row=0, column=3, sticky="w")
+        tk.Label(header, text="Last Bought", width=15, anchor="w", font=("Arial", 12, "bold")).grid(row=0, column=4, sticky="w")
+        tk.Label(header, text="Category", width=20, anchor="w", font=("Arial", 12, "bold")).grid(row=0, column=5, sticky="w")
 
         for row, (name, data) in enumerate(inventory.items(), start=1):
             row = tk.Frame(self.list_frame)
@@ -210,8 +216,21 @@ class Inventory(tk.Frame):
 
             tk.Label(row, text=name, width=20, anchor="w").grid(row=0, column=0, sticky="w")
             tk.Label(row, text=str(data.get("Quantity", "")), width=10, anchor="w").grid(row=0, column=1, sticky="w")
-            tk.Label(row, text=data.get("Location", ""), width=20, anchor="w").grid(row=0, column=2, sticky="w")
-            tk.Label(row, text=data.get("Last Bought", ""), width=15, anchor="w").grid(row=0, column=3, sticky="w")
+            tk.Label(row, text=str(data.get("Unit", "")), width=10, anchor="w").grid(row=0, column=2, sticky="w")
+            tk.Label(row, text=data.get("Location", ""), width=20, anchor="w").grid(row=0, column=3, sticky="w")
+            tk.Label(row, text=data.get("Last Bought", ""), width=15, anchor="w").grid(row=0, column=4, sticky="w")
+            tk.Label(row, text=data.get("Category", ""), width=20, anchor="w").grid(row=0, column=5, sticky="w")
+
+    ## categorization microservice
+    def refresh_category(self):
+        inv = self.controller.inventory
+
+        for name, data in inv.items():
+            if not data.get("Category"):
+                category = request_categorization(name)
+                inv[name]["Category"] = category
+
+        self.refresh()
 
 
 class SearchInventory(tk.Frame):
@@ -255,8 +274,10 @@ class SearchInventory(tk.Frame):
             items = [(name, data)
                     for (name, data) in items
                     if search_query in name.lower()
+                    or search_query in str(data.get("Unit", "")).lower()
                     or search_query in str(data.get("Location", "")).lower()
-                    or search_query in str(data.get("Last Bought", "")).lower()]
+                    or search_query in str(data.get("Last Bought", "")).lower()
+                    or search_query in str(data.get("Category", "")).lower()]
 
         if not inv:
             tk.Label(self.list_frame, text="No items yet. Click 'Add Item' to start.").pack(anchor="w")
@@ -271,8 +292,10 @@ class SearchInventory(tk.Frame):
 
         tk.Label(header, text="Item", width=20, anchor="w", font=("Arial", 12, "bold")).grid(row=0, column=0, sticky="w")
         tk.Label(header, text="Qty", width=10, anchor="w", font=("Arial", 12, "bold")).grid(row=0, column=1, sticky="w")
-        tk.Label(header, text="Location", width=20, anchor="w", font=("Arial", 12, "bold")).grid(row=0, column=2, sticky="w")
-        tk.Label(header, text="Last Bought", width=15, anchor="w", font=("Arial", 12, "bold")).grid(row=0, column=3, sticky="w")
+        tk.Label(header, text="Units", width=10, anchor="w", font=("Arial", 12, "bold")).grid(row=0, column=2, sticky="w")
+        tk.Label(header, text="Location", width=20, anchor="w", font=("Arial", 12, "bold")).grid(row=0, column=3, sticky="w")
+        tk.Label(header, text="Last Bought", width=15, anchor="w", font=("Arial", 12, "bold")).grid(row=0, column=4, sticky="w")
+        tk.Label(header, text="Category", width=15, anchor="w", font=("Arial", 12, "bold")).grid(row=0, column=5, sticky="w")
 
         for name, data in items:
             row = tk.Frame(self.list_frame)
@@ -280,10 +303,10 @@ class SearchInventory(tk.Frame):
 
             tk.Label(row, text=name, width=20, anchor="w").grid(row=0, column=0, sticky="w")
             tk.Label(row, text=str(data.get("Quantity", "")), width=10, anchor="w").grid(row=0, column=1, sticky="w")
-            tk.Label(row, text=data.get("Location", ""), width=20, anchor="w").grid(row=0, column=2, sticky="w")
-            tk.Label(row, text=data.get("Last Bought", ""), width=15, anchor="w").grid(row=0, column=3, sticky="w")
-
-
+            tk.Label(row, text=str(data.get("Unit", "")), width=10, anchor="w").grid(row=0, column=2, sticky="w")
+            tk.Label(row, text=data.get("Location", ""), width=20, anchor="w").grid(row=0, column=3, sticky="w")
+            tk.Label(row, text=data.get("Last Bought", ""), width=15, anchor="w").grid(row=0, column=4, sticky="w")
+            tk.Label(row, text=data.get("Category", ""), width=15, anchor="w").grid(row=0, column=5, sticky="w")
 
 
 class AddItem(tk.Frame):                        ## inventory page
@@ -308,14 +331,19 @@ class AddItem(tk.Frame):                        ## inventory page
         self.quantity = tk.Entry(form_frame, width=20)
         self.quantity.grid(row=1, column=1, padx=10, pady=5)
 
-        self.location_var = tk.StringVar(value="")
-        tk.Label(form_frame, text="Location").grid(row=2, column=0, sticky="e", padx=10, pady=5)
-        self.location_box = ttk.Combobox(form_frame, textvariable=self.location_var, values=self.controller.locations, state="readonly")
-        self.location_box.grid(row=2, column=1, padx=10, pady=5, sticky="ew")
+        self.units_var = tk.StringVar(value="")
+        tk.Label(form_frame, text="Units").grid(row=2, column=0, sticky="e", padx=10, pady=5)
+        self.units_box = ttk.Combobox(form_frame, textvariable=self.units_var, values=['g', 'lbs', 'ml', 'mg', 'tsp', 'tbsp', 'oz', 'fl oz', 'cups'], state="readonly")
+        self.units_box.grid(row=2, column=1, padx=10, pady='5', sticky="ew")
 
-        tk.Label(form_frame, text="Last Bought (MM/DD/YYYY)").grid(row=3, column=0, sticky="e", padx=10, pady=5)
+        self.location_var = tk.StringVar(value="")
+        tk.Label(form_frame, text="Location").grid(row=3, column=0, sticky="e", padx=10, pady=5)
+        self.location_box = ttk.Combobox(form_frame, textvariable=self.location_var, values=self.controller.locations, state="readonly")
+        self.location_box.grid(row=3, column=1, padx=10, pady=5, sticky="ew")
+
+        tk.Label(form_frame, text="Last Bought (MM/DD/YYYY)").grid(row=4, column=0, sticky="e", padx=10, pady=5)
         self.lb = tk.Entry(form_frame, width=20)
-        self.lb.grid(row=3, column=1, padx=10, pady=5)
+        self.lb.grid(row=4, column=1, padx=10, pady=5)
 
         b1 = tk.Button(button_frame, text="Confirm", command=self.when_confirm_pressed)
         b1.pack(side=tk.LEFT, padx=5, pady=5)
@@ -329,6 +357,7 @@ class AddItem(tk.Frame):                        ## inventory page
     def when_confirm_pressed(self):
         item_name = self.item.get().strip()
         qty_text = self.quantity.get().strip()
+        units_text = self.units_var.get().strip()
         location = self.location_var.get().strip()
         last_bought = self.lb.get().strip()
 
@@ -338,7 +367,7 @@ class AddItem(tk.Frame):                        ## inventory page
         
         qty = float(qty_text) if qty_text else 0
 
-        self.controller.add_inventory_item(item_name=item_name, qty=qty, location=location, last_bought=last_bought)
+        self.controller.add_inventory_item(item_name=item_name, qty=qty, units=units_text, location=location, last_bought=last_bought)
         self.item.delete(0, tk.END)
         self.quantity.delete(0, tk.END)
 
@@ -347,6 +376,7 @@ class AddItem(tk.Frame):                        ## inventory page
         else:
             self.location_var.set("")
 
+        self.units_var.set("")
         self.lb.delete(0, tk.END)
         self.controller.show_frame(Inventory)
 
@@ -1162,6 +1192,24 @@ class RemoveEvent(tk.Frame):
 
         tk.Label(self, text="Select an event to remove:", font=("Arial", 20)).pack(pady=20)
         tk.Button(self, text="Back to Home", command=lambda: controller.show_frame(HomePage)).pack()
+
+import zmq
+
+context = zmq.Context.instance()
+socket = context.socket(zmq.REQ)
+
+socket.linger = 0          
+socket.rcvtimeo = 1500     
+socket.sndtimeo = 1500 
+
+socket.connect("tcp://127.0.0.1:5555")
+
+def request_categorization(item_name):
+    try:
+        socket.send_string(str(item_name))
+        return socket.recv_string()
+    except zmq.Again:
+        return "Uncategorized"
 
 if __name__ == '__main__':
     app = App()
