@@ -1,8 +1,17 @@
 import tkinter as tk
 from tkinter.scrolledtext import ScrolledText
 from tkinter import ttk
-from tkinter import messagebox
+from tkinter import messagebox, simpledialog
+import zmq
 
+context = zmq.Context.instance()
+socket = context.socket(zmq.REQ)
+
+socket.linger = 0          
+socket.rcvtimeo = 1500     
+socket.sndtimeo = 1500 
+
+socket.connect("tcp://127.0.0.1:5555")
 
 class App(tk.Tk):
     def __init__(self):
@@ -21,6 +30,7 @@ class App(tk.Tk):
         self.selected_list = tk.StringVar(value="")
         self.locations = []              
         self.selected_location = tk.StringVar(value="")
+        self.password_setup = False
 
         for F in (HomePage, 
                   Inventory, AddItem, RemoveItem, ImportList, DesignKitchen, SearchInventory,     ## inventory classes
@@ -28,7 +38,7 @@ class App(tk.Tk):
                   GroceryLists, AddList, ViewList, RemoveList,                                      ## list classes
                   UsableRecipes, 
                   Calendar, AddEvent, RemoveEvent, ViewEvent,                                       ## calendar classes
-                  HelpPage):                  
+                  HelpPage, LockScreen):                  
             frame = F(self.container, self)
             self.frames[F] = frame
             frame.grid(row=0, column=0, sticky="nsew")
@@ -123,7 +133,95 @@ class App(tk.Tk):
                 continue
             qty = item.get("qty", 0)
             self.add_inventory_item(name, qty, default_location, default_last_bought)
+
+    # file download microservice
+    def download_files(self, dictionary_obj):
+        try:
+            socket.send_json(dictionary_obj)
+            return socket.recv_string()
+        except zmq.Again:
+            return "File not downloaded."
+
+    # sorting microservice    
+    def sort_request(self, dictionary_obj, dict_type):
+        try:
+            socket.send_json(dictionary_obj)
+            sorted_dict = socket.recv_json()
+            if dict_type == 'Inventory':
+                self.inventory = sorted_dict
+            elif dict_type == 'Recipes':
+                self.recipes = sorted_dict
+            return
+        except zmq.Again:
+            return "Unable to sort."
+
+    def setup_password(self):
+        user_input = simpledialog.askstring(title="Password Setup", prompt="Enter a new password:")
+        if not user_input:
+            return False
+        
+        try:
+            socket.send_string(f"SET_PASSWORD:{str(user_input)}")
+            response = socket.recv_string()
+
+            if response == "Password created.":
+                self.password_setup = True
+                return True
+            else:
+                messagebox.showerror("Error", "Unable to set up password. Try again.")
+                return False
+        except zmq.Again:
+            messagebox.showerror("Error", "Unable to set up password. Try again.")
+            return False
+
+        return    
+
+    # lockscreen microservice
+    def request_lockscreen(self):
+
+        if not self.password_setup:
+            if not self.setup_password():
+                return
+
+        try:
+            socket.send_string("LOCK")
+            response = socket.recv_string()
+            if response == 'activate':
+                self.show_frame(LockScreen)
+            else:
+                messagebox.showerror("Error", response)
+        except zmq.Again:
+            messagebox.showerror("Error", "Unable to lock.")
+        
+        return
+
+
+class LockScreen(tk.Frame):
+    def __init__(self, parent, controller):
+        super().__init__(parent)
+        self.controller = controller
+
+        tk.Label(self, text="Enter your password: ", font=("Arial", 20)).pack(pady=20)
+        tk.Button(self, text="Unlock", command=self.unlock).pack(pady=10)
     
+    def unlock(self):
+        user_input = simpledialog.askstring(title="", prompt="Enter your password:")
+        if not user_input:
+            return
+        
+        try:
+            socket.send_string(f"UNLOCK:{str(user_input)}")
+            response = socket.recv_string()
+
+            if response == 'Pass':
+                self.controller.show_frame(HomePage)
+            else:
+                messagebox.showerror("Error", "Incorrect password. Try again.")
+        except zmq.Again:
+            messagebox.showerror("Error", "Unable to verify password. Try again.")
+
+        return
+
 
 class HomePage(tk.Frame):
     def __init__(self, parent, controller):
@@ -137,6 +235,7 @@ class HomePage(tk.Frame):
         tk.Button(self, text="Calendar", command=lambda: controller.show_frame(Calendar)).pack(side=tk.LEFT)
         tk.Button(self, text="Usable Recipes", command=lambda: controller.show_frame(UsableRecipes)).pack(side=tk.LEFT)
         tk.Button(self, text="Help", command=lambda: controller.show_frame(HelpPage)).pack(side=tk.LEFT)
+        tk.Button(self, text="Lock", command=lambda: controller.request_lockscreen()).pack(side=tk.LEFT)
 
 class HelpPage(tk.Frame):
     def __init__(self, parent, controller):
@@ -162,6 +261,7 @@ class Inventory(tk.Frame):
     def __init__(self, parent, controller):
         super().__init__(parent)
         self.controller = controller
+        inventory = self.controller.inventory
 
         title = tk.Label(self, text="Your Inventory", font=("Arial", 20))
         title.pack(side=tk.TOP, pady=20)
@@ -189,6 +289,15 @@ class Inventory(tk.Frame):
 
         b6 = tk.Button(button_frame, text="Categorize Current Inventory", command=self.refresh_category)
         b6.pack(side=tk.LEFT, padx=5, pady=5)
+
+        b7 = tk.Button(button_frame, text="Sort", command=lambda: (controller.sort_request(dictionary_obj=controller.inventory, dict_type="Inventory"), self.refresh()))
+        b7.pack(side=tk.LEFT, padx=5, pady=5)
+
+        b8 = tk.Button(button_frame, text="Download Inventory", command=lambda: controller.download_files(inventory))
+        b8.pack(side=tk.LEFT, padx=5, pady=5)
+
+        b9 = tk.Button(self, text="Lock", command=lambda: controller.request_lockscreen())
+        b9.pack(side=tk.LEFT, padx=5, pady=5)
 
     def refresh(self):
         for i in self.list_frame.winfo_children():
@@ -353,6 +462,9 @@ class AddItem(tk.Frame):                        ## inventory page
 
         b3 = tk.Button(button_frame, text="Import", command=lambda: controller.show_frame(ImportList))
         b3.pack(side=tk.LEFT, padx=5, pady=5)
+
+        b4 = tk.Button(self, text="Lock", command=lambda: controller.request_lockscreen())
+        b4.pack(side=tk.LEFT, padx=5, pady=5)
 
     def when_confirm_pressed(self):
         item_name = self.item.get().strip()
@@ -578,6 +690,7 @@ class Recipes(tk.Frame):
     def __init__(self, parent, controller):
         super().__init__(parent)
         self.controller = controller
+        recipes = self.controller.recipes
 
         title = tk.Label(self, text="Your Recipes", font=("Arial", 20))
         title.pack(side=tk.TOP, pady=20)
@@ -604,6 +717,12 @@ class Recipes(tk.Frame):
         b4 = tk.Button(button_frame, text="View", command=lambda: controller.show_frame(ViewRecipe))
         b4.pack(side=tk.LEFT, padx=5, pady=5)
 
+        b5 = tk.Button(button_frame, text="Sort", command=lambda: (controller.sort_request(self.controller.recipes, "Recipes"), self.refresh()))
+        b5.pack(side=tk.LEFT, padx=5, pady=5)
+
+        b6 = tk.Button(button_frame, text="Download Recipes", command=lambda: controller.download_files(recipes))
+        b6.pack(side=tk.LEFT, padx=5, pady=5)
+
     def refresh(self):
         for i in self.list_frame.winfo_children():
             i.destroy()
@@ -622,6 +741,7 @@ class Recipes(tk.Frame):
             return
         self.msg.config(text="")
         self.controller.show_frame(ViewRecipe)
+
 
 class AddRecipe(tk.Frame):                            ## recipe page
     def __init__(self, parent, controller):
@@ -1193,16 +1313,7 @@ class RemoveEvent(tk.Frame):
         tk.Label(self, text="Select an event to remove:", font=("Arial", 20)).pack(pady=20)
         tk.Button(self, text="Back to Home", command=lambda: controller.show_frame(HomePage)).pack()
 
-import zmq
 
-context = zmq.Context.instance()
-socket = context.socket(zmq.REQ)
-
-socket.linger = 0          
-socket.rcvtimeo = 1500     
-socket.sndtimeo = 1500 
-
-socket.connect("tcp://127.0.0.1:5555")
 
 def request_categorization(item_name):
     try:
@@ -1210,6 +1321,8 @@ def request_categorization(item_name):
         return socket.recv_string()
     except zmq.Again:
         return "Uncategorized"
+
+
 
 if __name__ == '__main__':
     app = App()
