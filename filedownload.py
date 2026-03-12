@@ -3,7 +3,7 @@ import time
 
 context = zmq.Context()
 socket = context.socket(zmq.REP)
-socket.bind("tcp://*:5555")
+socket.bind("tcp://*:5558")
 
 while True:
     msg = socket.recv_json()

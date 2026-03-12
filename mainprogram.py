@@ -5,13 +5,30 @@ from tkinter import messagebox, simpledialog
 import zmq
 
 context = zmq.Context.instance()
-socket = context.socket(zmq.REQ)
 
-socket.linger = 0          
-socket.rcvtimeo = 1500     
-socket.sndtimeo = 1500 
+cat_socket = context.socket(zmq.REQ)
+cat_socket.linger = 0          
+cat_socket.rcvtimeo = 1500     
+cat_socket.sndtimeo = 1500 
+cat_socket.connect("tcp://127.0.0.1:5555")
 
-socket.connect("tcp://127.0.0.1:5555")
+sort_socket = context.socket(zmq.REQ)
+sort_socket.linger = 0
+sort_socket.rcvtimeo = 1500
+sort_socket.sndtimeo = 1500
+sort_socket.connect("tcp://127.0.0.1:5556")
+
+lock_socket = context.socket(zmq.REQ)
+lock_socket.linger = 0
+lock_socket.rcvtimeo = 1500
+lock_socket.sndtimeo = 1500
+lock_socket.connect("tcp://127.0.0.1:5557")
+
+file_socket = context.socket(zmq.REQ)
+file_socket.linger = 0
+file_socket.rcvtimeo = 1500
+file_socket.sndtimeo = 1500
+file_socket.connect("tcp://127.0.0.1:5558")
 
 class App(tk.Tk):
     def __init__(self):
@@ -137,16 +154,16 @@ class App(tk.Tk):
     # file download microservice
     def download_files(self, dictionary_obj):
         try:
-            socket.send_json(dictionary_obj)
-            return socket.recv_string()
+            file_socket.send_json(dictionary_obj)
+            return file_socket.recv_string()
         except zmq.Again:
             return "File not downloaded."
 
     # sorting microservice    
     def sort_request(self, dictionary_obj, dict_type):
         try:
-            socket.send_json(dictionary_obj)
-            sorted_dict = socket.recv_json()
+            sort_socket.send_json(dictionary_obj)
+            sorted_dict = sort_socket.recv_json()
             if dict_type == 'Inventory':
                 self.inventory = sorted_dict
             elif dict_type == 'Recipes':
@@ -161,8 +178,8 @@ class App(tk.Tk):
             return False
         
         try:
-            socket.send_string(f"SET_PASSWORD:{str(user_input)}")
-            response = socket.recv_string()
+            lock_socket.send_string(f"SET_PASSWORD:{str(user_input)}")
+            response = lock_socket.recv_string()
 
             if response == "Password created.":
                 self.password_setup = True
@@ -184,8 +201,8 @@ class App(tk.Tk):
                 return
 
         try:
-            socket.send_string("LOCK")
-            response = socket.recv_string()
+            lock_socket.send_string("LOCK")
+            response = lock_socket.recv_string()
             if response == 'activate':
                 self.show_frame(LockScreen)
             else:
@@ -210,8 +227,8 @@ class LockScreen(tk.Frame):
             return
         
         try:
-            socket.send_string(f"UNLOCK:{str(user_input)}")
-            response = socket.recv_string()
+            lock_socket.send_string(f"UNLOCK:{str(user_input)}")
+            response = lock_socket.recv_string()
 
             if response == 'Pass':
                 self.controller.show_frame(HomePage)
@@ -1317,8 +1334,8 @@ class RemoveEvent(tk.Frame):
 
 def request_categorization(item_name):
     try:
-        socket.send_string(str(item_name))
-        return socket.recv_string()
+        cat_socket.send_string(str(item_name))
+        return cat_socket.recv_string()
     except zmq.Again:
         return "Uncategorized"
 
